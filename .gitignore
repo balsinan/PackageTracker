@@ -1,0 +1,11 @@
+# Xcode
+DerivedData/
+xcuserdata/
+
+# Node / Firebase
+firebase/functions/node_modules/
+firebase/functions/.env*
+firebase/.firebase/
+
+# OS files
+.DS_Store

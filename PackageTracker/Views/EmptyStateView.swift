@@ -1,9 +1,17 @@
 import UIKit
 
+enum EmptyStateMode {
+    case noPackages
+    case noSearchResults
+    case noArchivedPackages
+}
+
 final class EmptyStateView: UIView {
     private let imageView = UIImageView(image: UIImage(systemName: "shippingbox"))
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
+
+    private(set) var mode: EmptyStateMode = .noPackages
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -41,5 +49,24 @@ final class EmptyStateView: UIView {
             stackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 32),
             stackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -32)
         ])
+    }
+
+    func setMode(_ mode: EmptyStateMode) {
+        guard self.mode != mode else { return }
+        self.mode = mode
+        switch mode {
+        case .noPackages:
+            imageView.image = UIImage(systemName: "shippingbox")
+            titleLabel.text = "Add your first package"
+            subtitleLabel.text = "Track every shipment in one place and get status changes as they happen."
+        case .noSearchResults:
+            imageView.image = UIImage(systemName: "magnifyingglass")
+            titleLabel.text = "No matches"
+            subtitleLabel.text = "Try a different name, carrier, or tracking number."
+        case .noArchivedPackages:
+            imageView.image = UIImage(systemName: "archivebox")
+            titleLabel.text = "Nothing archived yet"
+            subtitleLabel.text = "Delivered packages can move here automatically, or swipe a row to archive."
+        }
     }
 }

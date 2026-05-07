@@ -38,20 +38,59 @@ function titleForPackage(trackingNumber, title) {
   return title && title.trim() ? title.trim() : trackingNumber;
 }
 
+/**
+ * Prefer English copy from 17TRACK `description_translation`, then fall back to raw fields.
+ * (Carrier-provided text may still be non-English when no translation exists.)
+ */
+function pickTrackingDescription(node) {
+  if (!node || typeof node !== "object") {
+    return "";
+  }
+
+  const dt = node.description_translation;
+  if (dt && typeof dt === "object") {
+    if (Array.isArray(dt)) {
+      const en = dt.find((t) => t && String(t.lang || "").toLowerCase() === "en" && t.description);
+      if (en?.description) {
+        return String(en.description).trim();
+      }
+    } else if (String(dt.lang || "").toLowerCase() === "en" && dt.description) {
+      return String(dt.description).trim();
+    }
+  }
+
+  const fallbacks = [
+    node.description,
+    node.message,
+    node.checkpoint_message,
+    node.details,
+    node.event,
+    node.status_description,
+    node.title
+  ];
+
+  for (const v of fallbacks) {
+    if (v && String(v).trim()) {
+      return String(v).trim();
+    }
+  }
+
+  return "";
+}
+
 function normalizeStatus(rawStatus, rawSubStatus) {
-  const status = String(rawStatus || "").toLowerCase();
-  const subStatus = String(rawSubStatus || "").toLowerCase();
-  const combined = `${status} ${subStatus}`;
+  const expand = (s) => String(s || "").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_-]/g, " ").toLowerCase();
+  const combined = `${expand(rawStatus)} ${expand(rawSubStatus)}`;
 
   if (combined.includes("delivered")) {
     return "delivered";
   }
 
-  if (combined.includes("out for delivery")) {
+  if (combined.includes("out for delivery") || combined.includes("out_for_delivery")) {
     return "outForDelivery";
   }
 
-  if (combined.includes("failed") || combined.includes("attempt")) {
+  if (combined.includes("failed") || combined.includes("attempt fail")) {
     return "failedAttempt";
   }
 
@@ -105,10 +144,8 @@ function latestEventValue(trackInfo) {
   ].filter(Boolean);
 
   return {
-    description:
-      latestEvent.description_translation?.description ||
-      latestEvent.description ||
-      "",
+    description: pickTrackingDescription(latestEvent) ||
+      (typeof latestEvent === "string" ? latestEvent : ""),
     location: locationParts.join(", "),
     time: latestEvent.time_utc || latestEvent.time_iso || null,
     id: latestEvent.event_id || latestEvent.time_utc || latestEvent.time_iso || null
@@ -134,15 +171,7 @@ function normalizeCheckpoint(checkpoint, index) {
 
   const address = checkpoint.address || {};
 
-  const message =
-    checkpoint.message ||
-    checkpoint.description ||
-    checkpoint.description_translation?.description ||
-    checkpoint.checkpoint_message ||
-    checkpoint.details ||
-    checkpoint.event ||
-    checkpoint.status_description ||
-    "Tracking updated";
+  const message = pickTrackingDescription(checkpoint) || "Tracking updated";
 
   const location =
     checkpoint.location ||
@@ -218,6 +247,13 @@ function extractCheckpoints(trackInfo) {
     .slice(0, 20);
 }
 
+function filterPlaceholderCheckpoints(checkpoints) {
+  if (!Array.isArray(checkpoints)) {
+    return [];
+  }
+  return checkpoints.filter((c) => c && c.message !== "Tracking updated");
+}
+
 function carrierNameFromTrackInfo(trackInfo, fallback) {
   return (
     trackInfo?.carrier_name ||
@@ -231,30 +267,24 @@ function acceptedTrackInfo(response) {
   return response?.data?.accepted?.[0]?.track_info || null;
 }
 
+function isAlreadyRegisteredError(item) {
+  const code = item?.error?.code || item?.code;
+  const message = String(item?.error?.message || item?.message || "").toLowerCase();
+  return code === -18019901 ||
+    message.includes("has been registered") ||
+    message.includes("don't need to repeat registration") ||
+    message.includes("dont need to repeat registration") ||
+    message.includes("repeat registration");
+}
+
 async function fetchTrackInfo({trackingNumber, carrierCode}) {
-  const realTimePayload = [{
-    number: trackingNumber,
-    carrier: carrierCode || undefined,
-    cacheLevel: 0
-  }];
-  const standardPayload = [{
-    number: trackingNumber,
-    carrier: carrierCode || undefined
-  }];
-
   try {
-    const realTimeResponse = await callTrack17("getRealTimeTrackInfo", "POST", realTimePayload);
-    const trackInfo = acceptedTrackInfo(realTimeResponse);
-    if (trackInfo) {
-      return trackInfo;
-    }
-  } catch (error) {
-    console.log("getRealTimeTrackInfo failed", trackingNumber, error.message);
-  }
-
-  try {
-    const detailsResponse = await callTrack17("gettrackinfo", "POST", standardPayload);
-    return acceptedTrackInfo(detailsResponse);
+    const payload = [{
+      number: trackingNumber,
+      carrier: carrierCode || undefined
+    }];
+    const response = await callTrack17("gettrackinfo", "POST", payload);
+    return acceptedTrackInfo(response);
   } catch (error) {
     console.log("gettrackinfo failed", trackingNumber, error.message);
     return null;
@@ -262,7 +292,7 @@ async function fetchTrackInfo({trackingNumber, carrierCode}) {
 }
 
 function buildTrackingSnapshot({trackingNumber, existingData, title, carrierSlug, carrierCode, carrierName, trackInfo}) {
-  const checkpoints = extractCheckpoints(trackInfo);
+  const checkpoints = filterPlaceholderCheckpoints(extractCheckpoints(trackInfo));
   const latestCheckpoint = checkpoints[0] || null;
   const latestStatus = latestStatusValue(trackInfo);
   const latestEvent = latestEventValue(trackInfo);
@@ -297,16 +327,42 @@ function buildTrackingSnapshot({trackingNumber, existingData, title, carrierSlug
 }
 
 function buildClientPackage(trackingData, subscriptionData) {
+  const status = subscriptionData?.statusOverride || trackingData.status || "pending";
+  const lastUpdate = subscriptionData?.lastUpdateOverride || trackingData.lastUpdate || "Tracking created.";
+
   return {
     trackingNumber: trackingData.trackingNumber,
     title: subscriptionData?.title || trackingData.title || trackingData.trackingNumber,
     carrierSlug: trackingData.carrierSlug || "unknown",
     carrierName: trackingData.carrierName || "Unknown carrier",
-    status: trackingData.status || "pending",
-    lastUpdate: trackingData.lastUpdate || "Tracking created.",
+    status,
+    lastUpdate,
     trackingId: trackingData.trackingId || null,
-    checkpoints: Array.isArray(trackingData.checkpoints) ? trackingData.checkpoints : []
+    checkpoints: filterPlaceholderCheckpoints(
+      Array.isArray(trackingData.checkpoints) ? trackingData.checkpoints : []
+    ),
+    isArchived: subscriptionData?.isArchived === true
   };
+}
+
+/**
+ * 17TRACK sometimes returns a shape where `extractCheckpoints` is empty while we already
+ * have a full timeline in Firestore. Prefer non-empty stored checkpoints over wiping history.
+ */
+function mergeCheckpointsKeepHistory(latest, previous) {
+  const next = filterPlaceholderCheckpoints(latest?.checkpoints);
+  const prev = filterPlaceholderCheckpoints(previous?.checkpoints);
+  const withNext = {...latest, checkpoints: next};
+  if (next.length > 0) {
+    return withNext;
+  }
+  if (prev.length > 0) {
+    return {
+      ...withNext,
+      checkpoints: prev
+    };
+  }
+  return withNext;
 }
 
 async function callTrack17(path, method, body) {
@@ -335,13 +391,18 @@ async function callTrack17(path, method, body) {
 }
 
 async function upsertInstallationRecord({installationId, fcmToken, notificationsEnabled, platform}) {
-  await db.collection("installations").doc(installationId).set({
+  const payload = {
     installationId,
-    fcmToken: fcmToken || null,
     notificationsEnabled: notificationsEnabled !== false,
     platform: platform || "ios",
     updatedAt: now()
-  }, { merge: true });
+  };
+
+  if (fcmToken) {
+    payload.fcmToken = fcmToken;
+  }
+
+  await db.collection("installations").doc(installationId).set(payload, { merge: true });
 }
 
 async function subscribeInstallationToTracking({installationId, trackingId, trackingNumber, title, carrierSlug}) {
@@ -356,6 +417,35 @@ async function subscribeInstallationToTracking({installationId, trackingId, trac
   await Promise.all([
     db.collection("trackings").doc(trackingId).collection("subscribers").doc(installationId).set(subscriptionPayload, { merge: true }),
     db.collection("installations").doc(installationId).collection("trackings").doc(trackingId).set(subscriptionPayload, { merge: true })
+  ]);
+}
+
+async function updateInstallationTrackingCarrier({installationId, trackingId, carrierSlug}) {
+  const payload = {
+    carrierSlug: carrierSlug || "unknown",
+    statusOverride: admin.firestore.FieldValue.delete(),
+    lastUpdateOverride: admin.firestore.FieldValue.delete(),
+    manuallyDeliveredAt: admin.firestore.FieldValue.delete(),
+    updatedAt: now()
+  };
+
+  await Promise.all([
+    db.collection("trackings").doc(trackingId).collection("subscribers").doc(installationId).set(payload, { merge: true }),
+    db.collection("installations").doc(installationId).collection("trackings").doc(trackingId).set(payload, { merge: true })
+  ]);
+}
+
+async function updateInstallationTrackingStatusOverride({installationId, trackingId, statusOverride, lastUpdateOverride}) {
+  const payload = {
+    statusOverride,
+    lastUpdateOverride,
+    manuallyDeliveredAt: now(),
+    updatedAt: now()
+  };
+
+  await Promise.all([
+    db.collection("trackings").doc(trackingId).collection("subscribers").doc(installationId).set(payload, { merge: true }),
+    db.collection("installations").doc(installationId).collection("trackings").doc(trackingId).set(payload, { merge: true })
   ]);
 }
 
@@ -443,6 +533,47 @@ function buildPushMessage(trackingData, subscriptionData) {
   }
 }
 
+async function sendCatchUpPushes(installationId, fcmToken) {
+  const subscriptionsSnapshot = await db.collection("installations")
+    .doc(installationId)
+    .collection("trackings")
+    .get();
+
+  if (subscriptionsSnapshot.empty) {
+    return;
+  }
+
+  for (const subscriptionDoc of subscriptionsSnapshot.docs) {
+    const trackingId = subscriptionDoc.id;
+    const subscriptionData = subscriptionDoc.data();
+
+    if (subscriptionData?.isArchived) {
+      continue;
+    }
+
+    const trackingSnapshot = await db.collection("trackings").doc(trackingId).get();
+    if (!trackingSnapshot.exists) {
+      continue;
+    }
+
+    const trackingData = trackingSnapshot.data();
+    const push = buildPushMessage(trackingData, subscriptionData);
+
+    try {
+      await admin.messaging().send({
+        token: fcmToken,
+        notification: push,
+        data: {
+          trackingNumber: trackingData.trackingNumber || "",
+          trackingId: trackingId || ""
+        }
+      });
+    } catch (err) {
+      console.log("catch-up push failed for", trackingId, err.message);
+    }
+  }
+}
+
 async function pushTrackingUpdateToSubscribers(trackingId, trackingData, previousData) {
   const statusChanged = previousData?.status !== trackingData.status;
   const eventChanged = previousData?.latestEventKey !== trackingData.latestEventKey;
@@ -508,7 +639,19 @@ exports.upsertInstallation = onRequest(functionOptions, async (req, res) => {
       return;
     }
 
+    const previousSnapshot = await db.collection("installations").doc(installationId).get();
+    const previousData = previousSnapshot.exists ? previousSnapshot.data() : null;
+    const isReEnable = notificationsEnabled === true && previousData && previousData.notificationsEnabled === false;
+
     await upsertInstallationRecord({installationId, fcmToken, notificationsEnabled, platform});
+
+    if (isReEnable) {
+      const resolvedToken = fcmToken || previousData.fcmToken;
+      if (resolvedToken) {
+        await sendCatchUpPushes(installationId, resolvedToken);
+      }
+    }
+
     res.json({ok: true});
   } catch (error) {
     res.status(500).send(error.message);
@@ -534,13 +677,6 @@ exports.registerTracking = onRequest(functionOptions, async (req, res) => {
     const existingSnapshot = await trackingRef.get();
     const existingData = existingSnapshot.exists ? existingSnapshot.data() : null;
 
-    await upsertInstallationRecord({
-      installationId,
-      fcmToken: null,
-      notificationsEnabled: true,
-      platform: "ios"
-    });
-
     let trackInfo = null;
     let resolvedCarrierCode = carrierCode || existingData?.carrierCode || null;
     let carrierName = existingData?.carrierName || "Auto-detect pending";
@@ -553,17 +689,38 @@ exports.registerTracking = onRequest(functionOptions, async (req, res) => {
         }
       ]);
 
+      const rejectedItem = response?.data?.rejected?.[0];
+      if (rejectedItem) {
+        const code = rejectedItem.error?.code || rejectedItem.code;
+        if (code === -18019903) {
+          res.status(422).json({code: "CARRIER_REQUIRED", message: "Carrier could not be detected automatically. Please select a carrier and try again."});
+          return;
+        }
+        if (isAlreadyRegisteredError(rejectedItem)) {
+          const cachedTrackInfo = await fetchTrackInfo({
+            trackingNumber,
+            carrierCode: resolvedCarrierCode
+          });
+          if (cachedTrackInfo) {
+            trackInfo = cachedTrackInfo;
+            carrierName = cachedTrackInfo?.carrier_name || carrierName;
+          }
+        } else {
+          throw new Error(rejectedItem.error?.message || `17TRACK rejected tracking number (code ${code})`);
+        }
+      }
+
       const acceptedItem = response?.data?.accepted?.[0] || {};
-      trackInfo = acceptedItem?.track_info || null;
+      trackInfo = trackInfo || acceptedItem?.track_info || null;
       resolvedCarrierCode = acceptedItem?.carrier || resolvedCarrierCode;
       carrierName = trackInfo?.carrier_name || carrierName;
+    } else {
+      const cachedTrackInfo = await fetchTrackInfo({
+        trackingNumber,
+        carrierCode: resolvedCarrierCode
+      });
+      trackInfo = cachedTrackInfo;
     }
-
-    const freshTrackInfo = await fetchTrackInfo({
-      trackingNumber,
-      carrierCode: resolvedCarrierCode
-    });
-    trackInfo = freshTrackInfo || trackInfo;
 
     const trackingPayload = buildTrackingSnapshot({
       trackingNumber,
@@ -617,30 +774,11 @@ exports.getTrackingStatus = onRequest(functionOptions, async (req, res) => {
     }
 
     const trackingData = trackingSnapshot.data();
-    const freshTrackInfo = await fetchTrackInfo({
-      trackingNumber,
-      carrierCode: trackingData?.carrierCode
-    });
-    const latestTrackingData = freshTrackInfo
-      ? buildTrackingSnapshot({
-        trackingNumber,
-        existingData: trackingData,
-        title: trackingData?.title,
-        carrierSlug: trackingData?.carrierSlug,
-        carrierCode: trackingData?.carrierCode,
-        carrierName: trackingData?.carrierName,
-        trackInfo: freshTrackInfo
-      })
-      : trackingData;
-
-    if (freshTrackInfo) {
-      await db.collection("trackings").doc(trackingId).set(latestTrackingData, {merge: true});
-    }
     const subscriptionData = installationId
       ? await loadInstallationSubscription(installationId, trackingId)
       : null;
 
-    res.json(buildClientPackage(latestTrackingData, subscriptionData));
+    res.json(buildClientPackage(trackingData, subscriptionData));
   } catch (error) {
     res.status(500).send(error.message);
   }
@@ -698,6 +836,160 @@ exports.stopTracking = onRequest(functionOptions, async (req, res) => {
     ]);
 
     res.json({ok: true});
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
+
+exports.setTrackingArchived = onRequest(functionOptions, async (req, res) => {
+  try {
+    if (!requireMethod(req, res, "POST")) {
+      return;
+    }
+
+    const trackingNumber = sanitizeTrackingNumber(req.body?.trackingNumber);
+    const installationId = String(req.body?.installationId || "");
+    const trackingId = trackingDocumentId(trackingNumber);
+    const body = req.body || {};
+    if (typeof body.isArchived !== "boolean") {
+      res.status(400).send("isArchived (boolean) is required");
+      return;
+    }
+    const isArchived = body.isArchived;
+
+    if (!trackingNumber || !installationId) {
+      res.status(400).send("trackingNumber and installationId are required");
+      return;
+    }
+
+    const subRef = db.collection("installations").doc(installationId).collection("trackings").doc(trackingId);
+    const subSnap = await subRef.get();
+    if (!subSnap.exists) {
+      res.status(404).send("Subscription not found");
+      return;
+    }
+
+    await subRef.set({
+      isArchived,
+      updatedAt: now()
+    }, {merge: true});
+
+    res.json({ok: true});
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
+
+exports.updateTrackingCarrier = onRequest(functionOptions, async (req, res) => {
+  try {
+    if (!requireMethod(req, res, "POST")) {
+      return;
+    }
+
+    const trackingNumber = sanitizeTrackingNumber(req.body?.trackingNumber);
+    const installationId = String(req.body?.installationId || "");
+    const carrierCode = Number(req.body?.carrierCode);
+    const carrierName = String(req.body?.carrierName || "").trim();
+    const trackingId = trackingDocumentId(trackingNumber);
+
+    if (!trackingNumber || !installationId || !Number.isInteger(carrierCode) || carrierCode <= 0 || !carrierName) {
+      res.status(400).send("trackingNumber, installationId, carrierCode, and carrierName are required");
+      return;
+    }
+
+    const trackingRef = db.collection("trackings").doc(trackingId);
+    const trackingSnapshot = await trackingRef.get();
+    if (!trackingSnapshot.exists) {
+      res.status(404).send("Tracking not found");
+      return;
+    }
+
+    const subscriptionData = await loadInstallationSubscription(installationId, trackingId);
+    if (!subscriptionData) {
+      res.status(404).send("Subscription not found");
+      return;
+    }
+
+    const existingData = trackingSnapshot.data();
+    const previousCarrierCode = Number(existingData?.carrierCode || 0);
+    if (previousCarrierCode && previousCarrierCode !== carrierCode) {
+      try {
+        const changeResponse = await callTrack17("changecarrier", "POST", [{
+          number: trackingNumber,
+          carrier_old: previousCarrierCode,
+          carrier_new: carrierCode
+        }]);
+        const rejectedItem = changeResponse?.data?.rejected?.[0];
+        if (rejectedItem) {
+          console.log("changecarrier rejected", trackingNumber, JSON.stringify(rejectedItem));
+        }
+      } catch (error) {
+        console.log("changecarrier failed", trackingNumber, error.message);
+      }
+    }
+
+    const trackInfo = await fetchTrackInfo({trackingNumber, carrierCode});
+    const carrierSlug = `${carrierCode}`;
+    const trackingPayload = buildTrackingSnapshot({
+      trackingNumber,
+      existingData,
+      title: subscriptionData?.title || existingData?.title,
+      carrierSlug,
+      carrierCode,
+      carrierName,
+      trackInfo
+    });
+
+    await trackingRef.set(trackingPayload, { merge: true });
+    await updateInstallationTrackingCarrier({
+      installationId,
+      trackingId,
+      carrierSlug
+    });
+
+    const updatedSubscriptionData = await loadInstallationSubscription(installationId, trackingId);
+    res.json(buildClientPackage(trackingPayload, updatedSubscriptionData));
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
+
+exports.markTrackingDelivered = onRequest(functionOptions, async (req, res) => {
+  try {
+    if (!requireMethod(req, res, "POST")) {
+      return;
+    }
+
+    const trackingNumber = sanitizeTrackingNumber(req.body?.trackingNumber);
+    const installationId = String(req.body?.installationId || "");
+    const trackingId = trackingDocumentId(trackingNumber);
+
+    if (!trackingNumber || !installationId) {
+      res.status(400).send("trackingNumber and installationId are required");
+      return;
+    }
+
+    const trackingSnapshot = await db.collection("trackings").doc(trackingId).get();
+    if (!trackingSnapshot.exists) {
+      res.status(404).send("Tracking not found");
+      return;
+    }
+
+    const subscriptionData = await loadInstallationSubscription(installationId, trackingId);
+    if (!subscriptionData) {
+      res.status(404).send("Subscription not found");
+      return;
+    }
+
+    await updateInstallationTrackingStatusOverride({
+      installationId,
+      trackingId,
+      statusOverride: "delivered",
+      lastUpdateOverride: "Manually marked as delivered"
+    });
+
+    const updatedSubscriptionData = await loadInstallationSubscription(installationId, trackingId);
+    res.json(buildClientPackage(trackingSnapshot.data(), updatedSubscriptionData));
   } catch (error) {
     res.status(500).send(error.message);
   }

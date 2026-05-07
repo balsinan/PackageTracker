@@ -9,6 +9,14 @@ enum PackageStatus: String, CaseIterable {
     case failedAttempt
     case exception
     case expired
+    /// List filter only — not a carrier tracking state.
+    case archived
+
+    /// Chips shown in the packages filter bar (optionally includes the Archived status chip).
+    static func filterChips(includeArchived: Bool) -> [PackageStatus] {
+        let core: [PackageStatus] = [.all, .pending, .inTransit, .outForDelivery, .delivered, .failedAttempt, .exception, .expired]
+        return includeArchived ? core + [.archived] : core
+    }
 
     var title: String {
         switch self {
@@ -20,6 +28,7 @@ enum PackageStatus: String, CaseIterable {
         case .failedAttempt: return "FAILED"
         case .exception: return "EXCEPTION"
         case .expired: return "EXPIRED"
+        case .archived: return "ARCHIVED"
         }
     }
 
@@ -27,6 +36,8 @@ enum PackageStatus: String, CaseIterable {
         switch self {
         case .outForDelivery:
             return "Out for delivery"
+        case .archived:
+            return "Archived"
         default:
             return title.capitalized
         }
@@ -44,6 +55,8 @@ enum PackageStatus: String, CaseIterable {
             return AppTheme.delivered
         case .failedAttempt, .exception, .expired:
             return AppTheme.exception
+        case .archived:
+            return AppTheme.textSecondary
         }
     }
 
@@ -65,6 +78,8 @@ enum PackageStatus: String, CaseIterable {
             return "Unexpected shipment exception"
         case .expired:
             return "Tracking expired"
+        case .archived:
+            return "Archived packages"
         }
     }
 }

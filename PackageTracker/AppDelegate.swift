@@ -13,12 +13,15 @@ import FirebaseMessaging
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        // Unset key reads as `true` until the user turns tracking notifications off or denies system permission (both persist `false`).
+        UserDefaults.standard.register(defaults: [DefaultsKey.notificationsEnabled: true])
         FirebaseApp.configure()
         UNUserNotificationCenter.current().delegate = self
-        NotificationService.shared.configure(application: application)
         Messaging.messaging().delegate = self
-        Task {
-            try? await APIService.shared.upsertInstallation()
+        if NotificationService.shared.currentToken() != nil {
+            Task {
+                try? await APIService.shared.upsertInstallation()
+            }
         }
         return true
     }

@@ -7,18 +7,38 @@ final class NotificationService: NSObject {
 
     private override init() {}
 
-    func configure(application: UIApplication) {
-        requestAuthorization(application: application)
+    /// Short explainer alert with one action; tapping it presents the system notification permission prompt.
+    func presentFirstPackageNotificationEducation(from viewController: UIViewController) {
+        let alert = UIAlertController(
+            title: "Notifications",
+            message: "Get alerts when your package status changes.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "Continue", style: .default) { [weak self] _ in
+            self?.requestSystemNotificationPermission(application: UIApplication.shared) { _ in
+                Task {
+                    try? await APIService.shared.upsertInstallation()
+                }
+            }
+        })
+        viewController.present(alert, animated: true)
     }
 
-    private func requestAuthorization(application: UIApplication) {
+    /// Requests iOS notification permission and registers for remote notifications when granted.
+    func requestSystemNotificationPermission(application: UIApplication, completion: ((Bool) -> Void)? = nil) {
         let center = UNUserNotificationCenter.current()
         center.requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
             UserDefaults.standard.set(granted, forKey: DefaultsKey.notificationsEnabled)
 
-            guard granted else { return }
+            guard granted else {
+                DispatchQueue.main.async {
+                    completion?(false)
+                }
+                return
+            }
             DispatchQueue.main.async {
                 application.registerForRemoteNotifications()
+                completion?(true)
             }
         }
     }

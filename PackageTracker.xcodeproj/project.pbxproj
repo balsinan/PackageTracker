@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		160144DB2FAA286F00405204 /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = 160144DA2FAA286F00405204 /* RevenueCat */; };
 		16F83FB12F921A87001DC5F3 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 16F83FB02F921A87001DC5F3 /* FirebaseAnalytics */; };
 		16F83FB32F921A87001DC5F3 /* FirebaseAnalyticsCore in Frameworks */ = {isa = PBXBuildFile; productRef = 16F83FB22F921A87001DC5F3 /* FirebaseAnalyticsCore */; };
 		16F83FB52F921A87001DC5F3 /* FirebaseAppCheck in Frameworks */ = {isa = PBXBuildFile; productRef = 16F83FB42F921A87001DC5F3 /* FirebaseAppCheck */; };
@@ -54,6 +55,7 @@
 			files = (
 				16F83FB12F921A87001DC5F3 /* FirebaseAnalytics in Frameworks */,
 				16F83FB92F921A87001DC5F3 /* FirebaseCore in Frameworks */,
+				160144DB2FAA286F00405204 /* RevenueCat in Frameworks */,
 				16F83FB52F921A87001DC5F3 /* FirebaseAppCheck in Frameworks */,
 				16F83FC72F921A87001DC5F3 /* FirebaseRemoteConfig in Frameworks */,
 				16F83FC12F921A87001DC5F3 /* FirebaseFunctions in Frameworks */,
@@ -120,6 +122,7 @@
 				16F83FC42F921A87001DC5F3 /* FirebaseMessaging */,
 				16F83FC62F921A87001DC5F3 /* FirebaseRemoteConfig */,
 				16F83FC82F921A87001DC5F3 /* FirebaseStorage */,
+				160144DA2FAA286F00405204 /* RevenueCat */,
 			);
 			productName = PackageTracker;
 			productReference = 16F83F972F920C3D001DC5F3 /* PackageTracker.app */;
@@ -151,6 +154,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				16F83FAF2F921A87001DC5F3 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				160144D92FAA286F00405204 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 16F83F982F920C3D001DC5F3 /* Products */;
@@ -194,10 +198,11 @@
 				DEVELOPMENT_TEAM = KH363U6CAU;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PackageTracker/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Shippr;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -211,7 +216,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -226,10 +231,11 @@
 				DEVELOPMENT_TEAM = KH363U6CAU;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PackageTracker/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Shippr;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -243,7 +249,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -392,6 +398,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		160144D92FAA286F00405204 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/RevenueCat/purchases-ios-spm.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.70.0;
+			};
+		};
 		16F83FAF2F921A87001DC5F3 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
@@ -403,6 +417,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		160144DA2FAA286F00405204 /* RevenueCat */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 160144D92FAA286F00405204 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */;
+			productName = RevenueCat;
+		};
 		16F83FB02F921A87001DC5F3 /* FirebaseAnalytics */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 16F83FAF2F921A87001DC5F3 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;

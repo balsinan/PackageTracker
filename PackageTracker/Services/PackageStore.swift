@@ -35,10 +35,19 @@ final class PackageStore {
         do {
             let data = try Data(contentsOf: fileURL)
             packages = try decoder.decode([Package].self, from: data)
+            migrateComplimentaryAddConsumptionForLegacyFreeUsersIfNeeded()
         } catch {
             print("PackageStore load failed: \(error.localizedDescription)")
             packages = []
         }
+    }
+
+    /// Older installs may already have tracked packages without ever using the post-paywall complimentary slot.
+    private func migrateComplimentaryAddConsumptionForLegacyFreeUsersIfNeeded() {
+        guard !UserDefaults.standard.bool(forKey: DefaultsKey.hasConsumedComplimentaryPackageAdd) else { return }
+        guard !packages.isEmpty else { return }
+        guard !isPremium() else { return }
+        UserDefaults.standard.set(true, forKey: DefaultsKey.hasConsumedComplimentaryPackageAdd)
     }
 
     @discardableResult
@@ -51,6 +60,10 @@ final class PackageStore {
             updated.status = payload.status
             updated.lastUpdate = payload.lastUpdate
             updated.trackingId = payload.trackingId
+            updated.isArchived = payload.isArchived
+            if !payload.checkpoints.isEmpty {
+                updated.checkpoints = payload.checkpoints
+            }
             packages[index] = updated
             persist()
             return updated
@@ -66,9 +79,11 @@ final class PackageStore {
         var updated: [Package] = []
         for payload in payloads {
             if let existing = packages.first(where: { $0.trackingNumber == payload.trackingNumber }) {
-                updated.append(Package(from: payload, existingID: existing.id, createdAt: existing.createdAt))
+                let merged = Package(from: payload, existingID: existing.id, createdAt: existing.createdAt)
+                updated.append(merged)
             } else {
-                updated.append(Package(from: payload))
+                let fresh = Package(from: payload)
+                updated.append(fresh)
             }
         }
         packages = updated.sorted(by: { $0.createdAt > $1.createdAt })
@@ -82,11 +97,39 @@ final class PackageStore {
         persist()
     }
 
+    /// Applies a full tracking payload (e.g. from `getTrackingStatus`), including subscription `isArchived` from the backend.
+    func syncWithPayload(id: UUID, payload: TrackedPackagePayload, preserveExistingCheckpointsWhenPayloadIsEmpty: Bool = true) {
+        guard let index = packages.firstIndex(where: { $0.id == id }) else { return }
+        packages[index].title = payload.title.isEmpty ? packages[index].title : payload.title
+        packages[index].carrierSlug = payload.carrierSlug
+        packages[index].carrierName = payload.carrierName
+        packages[index].status = payload.status
+        packages[index].lastUpdate = payload.lastUpdate
+        packages[index].trackingId = payload.trackingId
+        packages[index].isArchived = payload.isArchived
+        if !payload.checkpoints.isEmpty {
+            packages[index].checkpoints = payload.checkpoints
+        } else if !preserveExistingCheckpointsWhenPayloadIsEmpty {
+            packages[index].checkpoints = []
+        }
+        persist()
+    }
+
     func updateCarrier(id: UUID, carrierCode: Int, carrierName: String) {
         guard let index = packages.firstIndex(where: { $0.id == id }) else { return }
         packages[index].carrierSlug = "\(carrierCode)"
         packages[index].carrierName = carrierName
         persist()
+    }
+
+    func setArchived(id: UUID, isArchived: Bool) {
+        guard let index = packages.firstIndex(where: { $0.id == id }) else { return }
+        let trackingNumber = packages[index].trackingNumber
+        packages[index].isArchived = isArchived
+        persist()
+        Task {
+            try? await APIService.shared.setTrackingArchived(trackingNumber: trackingNumber, isArchived: isArchived)
+        }
     }
 
     func delete(id: UUID) {

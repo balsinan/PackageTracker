@@ -23,6 +23,7 @@ final class PackageDetailViewController: UIViewController {
     init(package: Package) {
         self.package = package
         super.init(nibName: nil, bundle: nil)
+        hidesBottomBarWhenPushed = true
     }
 
     required init?(coder: NSCoder) {
@@ -32,11 +33,19 @@ final class PackageDetailViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = AppTheme.background
-        title = package.title ?? "Package Detail"
+        navigationItem.title = package.displayName
+        navigationItem.largeTitleDisplayMode = .never
         configureNavBar()
         buildLayout()
         populateUI()
+        events = package.checkpoints
+        rebuildTimeline()
         loadLatestStatus()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateScrollContentInsets()
     }
 
     // MARK: - Navigation Bar
@@ -54,6 +63,7 @@ final class PackageDetailViewController: UIViewController {
     // MARK: - Layout
 
     private func buildLayout() {
+        scrollView.contentInsetAdjustmentBehavior = .never
         scrollView.alwaysBounceVertical = true
         scrollView.keyboardDismissMode = .onDrag
         view.addSubview(scrollView)
@@ -85,6 +95,18 @@ final class PackageDetailViewController: UIViewController {
         contentStack.setCustomSpacing(20, after: contentStack.arrangedSubviews[4])
     }
 
+    private func updateScrollContentInsets() {
+        let safe = view.safeAreaInsets
+        let inset = UIEdgeInsets(
+            top: safe.top + Layout.detailExtraTopInset,
+            left: safe.left,
+            bottom: safe.bottom,
+            right: safe.right
+        )
+        scrollView.contentInset = inset
+        scrollView.verticalScrollIndicatorInsets = inset
+    }
+
     // MARK: - Tracking Number Card
 
     private func buildTrackingCard() -> UIView {
@@ -107,17 +129,7 @@ final class PackageDetailViewController: UIViewController {
         numberRow.spacing = 8
         numberRow.alignment = .center
 
-        statusBadge.font = .systemFont(ofSize: 13, weight: .bold)
-        statusBadge.layer.cornerRadius = 12
-        statusBadge.clipsToBounds = true
-        statusBadge.insets = UIEdgeInsets(top: 4, left: 12, bottom: 4, right: 12)
-
-        let topRow = UIStackView(arrangedSubviews: [numberRow, UIView(), statusBadge])
-        topRow.axis = .horizontal
-        topRow.alignment = .center
-        topRow.spacing = 8
-
-        let stack = UIStackView(arrangedSubviews: [header, topRow])
+        let stack = UIStackView(arrangedSubviews: [header, numberRow])
         stack.axis = .vertical
         stack.spacing = 8
 
@@ -347,6 +359,7 @@ final class PackageDetailViewController: UIViewController {
     // MARK: - Populate
 
     private func populateUI() {
+        navigationItem.title = package.displayName
         trackingNumberLabel.text = package.trackingNumber
         applyStatus(package.status)
         stepperView.setActiveStep(package.status)
@@ -386,9 +399,9 @@ final class PackageDetailViewController: UIViewController {
         }
 
         for (i, event) in events.enumerated() {
-            let cell = TrackingEventCell(style: .default, reuseIdentifier: nil)
-            cell.configure(with: event, isLast: i == events.count - 1)
-            timelineStack.addArrangedSubview(cell)
+            let row = TrackingEventCell()
+            row.configure(with: event, isLast: i == events.count - 1)
+            timelineStack.addArrangedSubview(row)
         }
     }
 
@@ -401,14 +414,22 @@ final class PackageDetailViewController: UIViewController {
             do {
                 let payload = try await APIService.shared.getTrackingStatus(for: package)
                 events = payload.checkpoints
+                if events.isEmpty {
+                    events = package.checkpoints
+                }
                 applyStatus(payload.status)
                 stepperView.setActiveStep(payload.status)
                 carrierNameLabel.text = payload.carrierName
                 carrierValueLabel.text = payload.carrierName
                 lastUpdateValueLabel.text = payload.lastUpdate
-                PackageStore.shared.update(id: package.id, status: payload.status, lastUpdate: payload.lastUpdate)
+                PackageStore.shared.syncWithPayload(id: package.id, payload: payload)
+                if let fresh = PackageStore.shared.packages.first(where: { $0.id == package.id }) {
+                    package = fresh
+                    title = package.displayName
+                }
                 rebuildTimeline()
             } catch {
+                events = package.checkpoints
                 rebuildTimeline()
             }
         }
@@ -418,8 +439,7 @@ final class PackageDetailViewController: UIViewController {
 
     @objc private func copyTrackingNumber() {
         UIPasteboard.general.string = package.trackingNumber
-        let generator = UINotificationFeedbackGenerator()
-        generator.notificationOccurred(.success)
+        HapticFeedback.notification(.success).play()
 
         let original = copyButton.tintColor
         copyButton.tintColor = AppTheme.delivered
@@ -431,6 +451,7 @@ final class PackageDetailViewController: UIViewController {
     }
 
     @objc private func moreTapped() {
+        HapticFeedback.light.play()
         let alert = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
         alert.addAction(UIAlertAction(title: "Mark as delivered", style: .default) { [weak self] _ in
             self?.markDeliveredTapped()
@@ -446,13 +467,46 @@ final class PackageDetailViewController: UIViewController {
     }
 
     @objc private func markDeliveredTapped() {
+        let previousStatus = package.status
+        let previousLastUpdate = package.lastUpdate
+        HapticFeedback.notification(.success).play()
         PackageStore.shared.update(id: package.id, status: .delivered, lastUpdate: "Manually marked as delivered")
         package.status = .delivered
+        package.lastUpdate = "Manually marked as delivered"
         applyStatus(.delivered)
         stepperView.setActiveStep(.delivered)
+        lastUpdateValueLabel.text = package.lastUpdate
+
+        Task { @MainActor in
+            do {
+                let payload = try await APIService.shared.markTrackingDelivered(for: package)
+                PackageStore.shared.syncWithPayload(id: package.id, payload: payload)
+                if let fresh = PackageStore.shared.packages.first(where: { $0.id == package.id }) {
+                    package = fresh
+                }
+                populateUI()
+            } catch {
+                PackageStore.shared.update(
+                    id: package.id,
+                    status: previousStatus,
+                    lastUpdate: previousLastUpdate ?? previousStatus.summaryText
+                )
+                package.status = previousStatus
+                package.lastUpdate = previousLastUpdate
+                populateUI()
+                let alert = UIAlertController(
+                    title: "Unable to mark delivered",
+                    message: error.localizedDescription,
+                    preferredStyle: .alert
+                )
+                alert.addAction(UIAlertAction(title: "OK", style: .default))
+                present(alert, animated: true)
+            }
+        }
     }
 
     @objc private func changeCarrierTapped() {
+        HapticFeedback.light.play()
         let vc = CarrierSelectionViewController(selectedCarrier: nil)
         vc.delegate = self
         let nav = UINavigationController(rootViewController: vc)
@@ -460,6 +514,7 @@ final class PackageDetailViewController: UIViewController {
     }
 
     @objc private func deletePackageTapped() {
+        HapticFeedback.rigid.play()
         let alert = UIAlertController(
             title: "Delete Package",
             message: "Are you sure you want to remove this package from tracking?",
@@ -468,6 +523,7 @@ final class PackageDetailViewController: UIViewController {
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { [weak self] _ in
             guard let self else { return }
+            HapticFeedback.notification(.error).play()
             PackageStore.shared.delete(id: self.package.id)
             Task {
                 try? await APIService.shared.stopTracking(for: self.package)
@@ -494,6 +550,34 @@ extension PackageDetailViewController: CarrierSelectionViewControllerDelegate {
         PackageStore.shared.updateCarrier(id: package.id, carrierCode: carrier.code, carrierName: carrier.name)
 
         controller.dismiss(animated: true)
+
+        Task { @MainActor in
+            activityIndicator.startAnimating()
+            defer { activityIndicator.stopAnimating() }
+
+            do {
+                let payload = try await APIService.shared.updateTrackingCarrier(for: package, carrier: carrier)
+                PackageStore.shared.syncWithPayload(
+                    id: package.id,
+                    payload: payload,
+                    preserveExistingCheckpointsWhenPayloadIsEmpty: false
+                )
+                if let fresh = PackageStore.shared.packages.first(where: { $0.id == package.id }) {
+                    package = fresh
+                }
+                events = package.checkpoints
+                populateUI()
+                rebuildTimeline()
+            } catch {
+                let alert = UIAlertController(
+                    title: "Unable to update carrier",
+                    message: error.localizedDescription,
+                    preferredStyle: .alert
+                )
+                alert.addAction(UIAlertAction(title: "OK", style: .default))
+                present(alert, animated: true)
+            }
+        }
     }
 }
 

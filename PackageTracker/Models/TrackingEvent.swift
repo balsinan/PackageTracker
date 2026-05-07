@@ -1,6 +1,6 @@
 import Foundation
 
-struct TrackingEvent: Hashable {
+struct TrackingEvent: Hashable, Codable {
     let id: String
     let title: String
     let detail: String

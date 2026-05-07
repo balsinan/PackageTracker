@@ -1,6 +1,7 @@
 {
   "images" : [
     {
+      "filename" : "Group 1272628439.jpg",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -12,6 +13,7 @@
           "value" : "dark"
         }
       ],
+      "filename" : "Group 1272628440.jpg",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -23,6 +25,7 @@
           "value" : "tinted"
         }
       ],
+      "filename" : "Group 1272628441.jpg",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"

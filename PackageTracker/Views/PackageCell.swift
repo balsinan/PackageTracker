@@ -20,11 +20,12 @@ final class PackageCell: UITableViewCell {
     }
 
     func configure(with package: Package) {
-        titleLabel.text = package.title ?? package.trackingNumber
+        titleLabel.text = package.displayName
         carrierLabel.text = package.carrierName ?? "Unknown carrier"
         messageLabel.text = package.lastUpdate ?? package.status.summaryText
 
         let formatter = RelativeDateTimeFormatter()
+        formatter.locale = Locale(identifier: "en_US")
         formatter.unitsStyle = .full
         dateLabel.text = formatter.localizedString(for: package.createdAt, relativeTo: Date())
 

@@ -3,6 +3,7 @@ import UIKit
 final class MainTabBarController: UITabBarController {
     override func viewDidLoad() {
         super.viewDidLoad()
+        delegate = self
         configureAppearance()
         setViewControllers([makePackagesNav(), makeSettingsNav()], animated: false)
     }
@@ -24,6 +25,7 @@ final class MainTabBarController: UITabBarController {
         let controller = PackageListViewController()
         controller.title = "My Packages"
         let navigationController = UINavigationController(rootViewController: controller)
+        navigationController.navigationBar.prefersLargeTitles = true
         navigationController.tabBarItem = UITabBarItem(title: "Packages", image: UIImage(systemName: "shippingbox"), selectedImage: UIImage(systemName: "shippingbox.fill"))
         return navigationController
     }
@@ -32,7 +34,17 @@ final class MainTabBarController: UITabBarController {
         let controller = SettingsViewController()
         controller.title = "Settings"
         let navigationController = UINavigationController(rootViewController: controller)
+        navigationController.navigationBar.prefersLargeTitles = true
         navigationController.tabBarItem = UITabBarItem(title: "Settings", image: UIImage(systemName: "gearshape"), selectedImage: UIImage(systemName: "gearshape.fill"))
         return navigationController
+    }
+}
+
+extension MainTabBarController: UITabBarControllerDelegate {
+    func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
+        if viewController !== tabBarController.selectedViewController {
+            HapticFeedback.selection.play()
+        }
+        return true
     }
 }

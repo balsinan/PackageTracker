@@ -68,6 +68,7 @@ extension CarrierSelectionViewController: UITableViewDataSource, UITableViewDele
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        HapticFeedback.selection.play()
         let carrier = filteredCarriers[indexPath.row]
         delegate?.carrierSelectionViewController(self, didSelect: carrier)
         navigationController?.popViewController(animated: true)

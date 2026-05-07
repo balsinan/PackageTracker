@@ -9,10 +9,17 @@ final class AddPackageViewController: UIViewController {
     private let carrierButton = UIButton(type: .system)
     private let carrierHintLabel = UILabel()
     private let addButton = UIButton(type: .system)
+    private let addButtonSpinner = UIActivityIndicatorView(style: .medium)
+
+    /// True while a register request is in flight; keeps the Add UI in a loading state and blocks `updateAddButtonState` from fighting it.
+    private var isRegisterInProgress = false
 
     private var selectedCarrier: Carrier? {
         didSet { updateCarrierButton() }
     }
+
+    /// After the first complimentary paywall dismissal on this screen, "Add" retries without showing the paywall again until close or success.
+    private var complimentaryPaywallDismissedForCurrentFlow = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -81,6 +88,24 @@ final class AddPackageViewController: UIViewController {
         addButton.layer.cornerRadius = Layout.controlCornerRadius
         addButton.titleLabel?.font = .systemFont(ofSize: 18, weight: .bold)
         addButton.addTarget(self, action: #selector(addTapped), for: .touchUpInside)
+
+        addButtonSpinner.translatesAutoresizingMaskIntoConstraints = false
+        addButtonSpinner.hidesWhenStopped = true
+        addButtonSpinner.color = AppTheme.accent
+        addButton.addSubview(addButtonSpinner)
+        NSLayoutConstraint.activate([
+            addButtonSpinner.centerXAnchor.constraint(equalTo: addButton.centerXAnchor),
+            addButtonSpinner.centerYAnchor.constraint(equalTo: addButton.centerYAnchor)
+        ])
+
+        trackingField.delegate = self
+        titleField.delegate = self
+        trackingField.returnKeyType = .next
+        titleField.returnKeyType = .done
+
+        let tap = UITapGestureRecognizer(target: self, action: #selector(dismissKeyboard))
+        tap.cancelsTouchesInView = false
+        scrollView.addGestureRecognizer(tap)
 
         let spacer = UIView()
         spacer.heightAnchor.constraint(equalToConstant: 8).isActive = true
@@ -168,14 +193,49 @@ final class AddPackageViewController: UIViewController {
         updateAddButtonState()
     }
 
+    /// When this screen is the root of a modally presented navigation controller, the explainer alert should be shown on the view controller that presented the modal (not on the dismissed nav shell).
+    private func presenterAfterModalDismissal() -> UIViewController? {
+        if let modalShell = presentingViewController,
+           let presenter = modalShell.presentingViewController {
+            return presenter
+        }
+        return presentingViewController
+    }
+
     private func updateAddButtonState() {
+        guard !isRegisterInProgress else { return }
         let hasNumber = !(trackingField.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
         let isEnabled = hasNumber
         addButton.isEnabled = isEnabled
         addButton.alpha = isEnabled ? 1 : 0.4
     }
 
+    private func setAddButtonLoading(_ loading: Bool) {
+        isRegisterInProgress = loading
+        if loading {
+            addButton.setTitle("", for: .normal)
+            addButton.backgroundColor = AppTheme.secondaryBackground
+            addButtonSpinner.color = AppTheme.accent
+            addButton.isEnabled = true
+            addButton.alpha = 1
+            addButton.isUserInteractionEnabled = false
+            addButtonSpinner.startAnimating()
+        } else {
+            addButtonSpinner.stopAnimating()
+            addButton.backgroundColor = AppTheme.accent
+            addButton.setTitle("Add Package", for: .normal)
+            addButton.isUserInteractionEnabled = true
+            updateAddButtonState()
+        }
+    }
+
+    @objc private func dismissKeyboard() {
+        view.endEditing(true)
+    }
+
     @objc private func closeTapped() {
+        HapticFeedback.light.play()
+        complimentaryPaywallDismissedForCurrentFlow = false
         dismiss(animated: true)
     }
 
@@ -184,6 +244,7 @@ final class AddPackageViewController: UIViewController {
     }
 
     @objc private func carrierTapped() {
+        HapticFeedback.light.play()
         view.endEditing(true)
         let vc = CarrierSelectionViewController(selectedCarrier: selectedCarrier)
         vc.delegate = self
@@ -191,36 +252,114 @@ final class AddPackageViewController: UIViewController {
     }
 
     @objc private func addTapped() {
+        view.endEditing(true)
         guard let trackingNumber = trackingField.text?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trackingNumber.isEmpty else { return }
 
-        addButton.isEnabled = false
-        addButton.alpha = 0.5
+        if isPremium() {
+            HapticFeedback.medium.play()
+            Task { await performRegisterAndDismiss(consumeComplimentarySlotOnSuccess: false) }
+            return
+        }
 
-        Task { @MainActor in
-            defer {
-                addButton.isEnabled = true
-                addButton.alpha = 1
-            }
+        if UserDefaults.standard.bool(forKey: DefaultsKey.hasConsumedComplimentaryPackageAdd) {
+            HapticFeedback.light.play()
+            PaywallViewController.presentModally(from: self)
+            return
+        }
 
-            do {
-                let payload = try await APIService.shared.registerTracking(
-                    number: trackingNumber,
-                    title: titleField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
-                    carrier: selectedCarrier
-                )
-                PackageStore.shared.upsert(from: payload)
-                dismiss(animated: true)
-            } catch {
-                let alert = UIAlertController(
-                    title: "Unable to add package",
-                    message: error.localizedDescription,
-                    preferredStyle: .alert
-                )
-                alert.addAction(UIAlertAction(title: "OK", style: .default))
-                present(alert, animated: true)
+        if complimentaryPaywallDismissedForCurrentFlow {
+            HapticFeedback.medium.play()
+            Task { await registerPackageAfterPaywallIfAllowed() }
+            return
+        }
+
+        HapticFeedback.light.play()
+        PaywallViewController.presentModally(from: self) { [weak self] in
+            guard let self else { return }
+            self.complimentaryPaywallDismissedForCurrentFlow = true
+            Task { @MainActor in
+                await self.registerPackageAfterPaywallIfAllowed()
             }
         }
+    }
+
+    private func registerPackageAfterPaywallIfAllowed() async {
+        guard let trackingNumber = trackingField.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trackingNumber.isEmpty else { return }
+
+        if isPremium() {
+            await performRegisterAndDismiss(consumeComplimentarySlotOnSuccess: false)
+            return
+        }
+
+        guard !UserDefaults.standard.bool(forKey: DefaultsKey.hasConsumedComplimentaryPackageAdd) else { return }
+
+        await performRegisterAndDismiss(consumeComplimentarySlotOnSuccess: true)
+    }
+
+    private func performRegisterAndDismiss(consumeComplimentarySlotOnSuccess: Bool) async {
+        await MainActor.run { setAddButtonLoading(true) }
+        defer {
+            Task { @MainActor [weak self] in
+                self?.setAddButtonLoading(false)
+            }
+        }
+
+        guard let trackingNumber = trackingField.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trackingNumber.isEmpty else { return }
+
+        do {
+            let isFirstPackage = PackageStore.shared.packages.isEmpty
+            let payload = try await APIService.shared.registerTracking(
+                number: trackingNumber,
+                title: titleField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+                carrier: selectedCarrier
+            )
+            PackageStore.shared.upsert(from: payload)
+            try? await APIService.shared.upsertInstallation()
+            if consumeComplimentarySlotOnSuccess {
+                UserDefaults.standard.set(true, forKey: DefaultsKey.hasConsumedComplimentaryPackageAdd)
+            }
+            HapticFeedback.notification(.success).play()
+            let hostForFollowUp = presenterAfterModalDismissal()
+            dismiss(animated: true) {
+                guard isFirstPackage, let host = hostForFollowUp else { return }
+                NotificationService.shared.presentFirstPackageNotificationEducation(from: host)
+            }
+        } catch APIServiceError.carrierRequired {
+            HapticFeedback.notification(.warning).play()
+            let alert = UIAlertController(
+                title: "Carrier not detected",
+                message: "We couldn't identify the carrier from the tracking number. Please select a carrier and try again.",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "Select Carrier", style: .default) { [weak self] _ in
+                self?.carrierTapped()
+            })
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+            present(alert, animated: true)
+        } catch {
+            HapticFeedback.notification(.error).play()
+            let alert = UIAlertController(
+                title: "Unable to add package",
+                message: error.localizedDescription,
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            present(alert, animated: true)
+        }
+    }
+}
+
+extension AddPackageViewController: UITextFieldDelegate {
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        if textField == trackingField {
+            titleField.becomeFirstResponder()
+        } else {
+            textField.resignFirstResponder()
+        }
+        return true
     }
 }
 

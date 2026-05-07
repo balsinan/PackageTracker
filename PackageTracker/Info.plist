@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>APP_STORE_ID</key>
+	<string>6762486028</string>
 	<key>FUNCTIONS_BASE_URL</key>
 	<string>https://us-central1-packagetracker-71759.cloudfunctions.net/</string>
 	<key>UIApplicationSceneManifest</key>
@@ -25,5 +29,30 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Fonts/Poppins-Thin.ttf</string>
+		<string>Fonts/Poppins-ThinItalic.ttf</string>
+		<string>Fonts/Poppins-ExtraLight.ttf</string>
+		<string>Fonts/Poppins-ExtraLightItalic.ttf</string>
+		<string>Fonts/Poppins-Light.ttf</string>
+		<string>Fonts/Poppins-LightItalic.ttf</string>
+		<string>Fonts/Poppins-Regular.ttf</string>
+		<string>Fonts/Poppins-Italic.ttf</string>
+		<string>Fonts/Poppins-Medium.ttf</string>
+		<string>Fonts/Poppins-MediumItalic.ttf</string>
+		<string>Fonts/Poppins-SemiBold.ttf</string>
+		<string>Fonts/Poppins-SemiBoldItalic.ttf</string>
+		<string>Fonts/Poppins-Bold.ttf</string>
+		<string>Fonts/Poppins-BoldItalic.ttf</string>
+		<string>Fonts/Poppins-ExtraBold.ttf</string>
+		<string>Fonts/Poppins-ExtraBoldItalic.ttf</string>
+		<string>Fonts/Poppins-Black.ttf</string>
+		<string>Fonts/Poppins-BlackItalic.ttf</string>
+	</array>
+	<key>UIUserInterfaceStyle</key>
+	<string>Light</string>
 </dict>
 </plist>

@@ -13,6 +13,17 @@ final class TrackingStepperView: UIView {
     private var connectors: [UIView] = []
     private var iconViews: [UIImageView] = []
 
+    private lazy var columnsStack: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.alignment = .top
+        stack.distribution = .equalSpacing
+        stack.spacing = 0
+        stack.isLayoutMarginsRelativeArrangement = false
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }()
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         buildUI()
@@ -44,17 +55,14 @@ final class TrackingStepperView: UIView {
         }
 
         for (i, connector) in connectors.enumerated() {
-            connector.backgroundColor = (i < activeIndex) ? AppTheme.accent : AppTheme.tertiaryBackground
+            let segmentDone = activeIndex > i
+            connector.backgroundColor = segmentDone ? AppTheme.accent : AppTheme.tertiaryBackground
+            connector.alpha = segmentDone ? 1 : 0.45
         }
     }
 
     private func buildUI() {
-        let container = UIStackView()
-        container.axis = .horizontal
-        container.alignment = .top
-        container.distribution = .equalSpacing
-
-        for (i, step) in steps.enumerated() {
+        for (_, step) in steps.enumerated() {
             let column = UIStackView()
             column.axis = .vertical
             column.alignment = .center
@@ -94,43 +102,39 @@ final class TrackingStepperView: UIView {
             stepCircles.append(circle)
             iconViews.append(icon)
 
-            if i > 0 {
-                let connector = UIView()
-                connector.backgroundColor = AppTheme.tertiaryBackground
-                connector.translatesAutoresizingMaskIntoConstraints = false
-                addSubview(connector)
-                connectors.append(connector)
-            }
-
-            container.addArrangedSubview(column)
+            columnsStack.addArrangedSubview(column)
         }
 
-        addSubview(container)
-        container.anchor(
+        addSubview(columnsStack)
+        columnsStack.anchor(
             top: topAnchor,
             leading: leadingAnchor,
             bottom: bottomAnchor,
             trailing: trailingAnchor,
             padding: UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
         )
-    }
 
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        for (i, connector) in connectors.enumerated() {
-            let from = stepCircles[i]
-            let to = stepCircles[i + 1]
-            let fromFrame = convert(from.bounds, from: from)
-            let toFrame = convert(to.bounds, from: to)
-            let connectorHeight: CGFloat = 3
+        for i in 0..<3 {
+            let connector = UIView()
+            connector.translatesAutoresizingMaskIntoConstraints = false
+            connector.layer.cornerRadius = 1.5
+            connector.backgroundColor = AppTheme.tertiaryBackground
+            connector.alpha = 0.45
+            addSubview(connector)
+            connectors.append(connector)
 
-            connector.frame = CGRect(
-                x: fromFrame.maxX + 4,
-                y: fromFrame.midY - (connectorHeight / 2),
-                width: max(0, toFrame.minX - fromFrame.maxX - 8),
-                height: connectorHeight
-            )
-            connector.layer.cornerRadius = connectorHeight / 2
+            let left = stepCircles[i]
+            let right = stepCircles[i + 1]
+
+            NSLayoutConstraint.activate([
+                connector.centerYAnchor.constraint(equalTo: left.centerYAnchor),
+                connector.leadingAnchor.constraint(equalTo: left.trailingAnchor, constant: 6),
+                connector.trailingAnchor.constraint(equalTo: right.leadingAnchor, constant: -6),
+                connector.heightAnchor.constraint(equalToConstant: 3)
+            ])
         }
+
+        // Connectors are added after `columnsStack`, so they paint on top of the stack. They sit only
+        // in the horizontal gap between adjacent circles (see constraints), so they don’t cover icons.
     }
 }

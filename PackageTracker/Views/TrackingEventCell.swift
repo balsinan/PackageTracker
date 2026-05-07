@@ -1,7 +1,8 @@
 import UIKit
 
-final class TrackingEventCell: UITableViewCell {
-    static let reuseIdentifier = "TrackingEventCell"
+/// Timeline row for package detail. Must be a plain `UIView` — `UITableViewCell` inside a `UIStackView`
+/// typically has no intrinsic height, so rows render as zero-height and look “empty”.
+final class TrackingEventCell: UIView {
 
     private let dotView = UIView()
     private let verticalLine = UIView()
@@ -10,9 +11,13 @@ final class TrackingEventCell: UITableViewCell {
     private let locationLabel = UILabel()
     private let dateLabel = UILabel()
 
-    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
-        super.init(style: style, reuseIdentifier: reuseIdentifier)
+    override init(frame: CGRect) {
+        super.init(frame: frame)
         configureUI()
+    }
+
+    convenience init() {
+        self.init(frame: .zero)
     }
 
     required init?(coder: NSCoder) {
@@ -24,14 +29,13 @@ final class TrackingEventCell: UITableViewCell {
         detailLabel.text = event.detail
         locationLabel.text = event.location
         locationLabel.isHidden = event.location.isEmpty
-        dateLabel.text = event.timestampText
+        dateLabel.text = event.displayTimestamp
 
         verticalLine.isHidden = isLast
     }
 
     private func configureUI() {
         backgroundColor = .clear
-        selectionStyle = .none
 
         dotView.backgroundColor = AppTheme.accent
         dotView.layer.cornerRadius = 6
@@ -40,6 +44,7 @@ final class TrackingEventCell: UITableViewCell {
 
         titleLabel.font = .systemFont(ofSize: 16, weight: .bold)
         titleLabel.textColor = AppTheme.textPrimary
+        titleLabel.numberOfLines = 0
 
         detailLabel.font = .systemFont(ofSize: 15, weight: .medium)
         detailLabel.textColor = AppTheme.textPrimary
@@ -55,21 +60,21 @@ final class TrackingEventCell: UITableViewCell {
         textStack.axis = .vertical
         textStack.spacing = 4
 
-        contentView.addSubview(dotView)
-        contentView.addSubview(verticalLine)
-        contentView.addSubview(textStack)
+        addSubview(dotView)
+        addSubview(verticalLine)
+        addSubview(textStack)
 
-        dotView.anchor(top: contentView.topAnchor, leading: contentView.leadingAnchor,
+        dotView.anchor(top: topAnchor, leading: leadingAnchor,
                        padding: UIEdgeInsets(top: 22, left: Layout.screenPadding + 4, bottom: 0, right: 0),
                        size: CGSize(width: 12, height: 12))
-        verticalLine.anchor(top: dotView.bottomAnchor, leading: dotView.leadingAnchor, bottom: contentView.bottomAnchor,
+        verticalLine.anchor(top: dotView.bottomAnchor, leading: dotView.leadingAnchor, bottom: bottomAnchor,
                             padding: UIEdgeInsets(top: 6, left: 5, bottom: 0, right: 0),
-                            size: CGSize(width: 2, height: .zero))
+                            size: CGSize(width: 2, height: 0))
         textStack.anchor(
-            top: contentView.topAnchor,
+            top: topAnchor,
             leading: dotView.trailingAnchor,
-            bottom: contentView.bottomAnchor,
-            trailing: contentView.trailingAnchor,
+            bottom: bottomAnchor,
+            trailing: trailingAnchor,
             padding: UIEdgeInsets(top: 16, left: 18, bottom: 16, right: Layout.screenPadding)
         )
     }
